@@ -10,21 +10,12 @@ from scipy.spatial import Delaunay
 
 from src.entropy import get_image_entropy
 from src.utils.file_utils import get_image_arr, save_image_arr_to_path
+from src.utils.image_utils import find_square_around_point
 
 
-def bias_image_area_around_point(img_arr, point, width=5, gaus_sigma=5, mute_factor=1):
-    # set up the numpy array for the default range
-    ranges = np.asarray(
-        [[-width, width+1],
-         [-width, width+1]]
-    )
-
-    # add in the point indexes
-    ranges[0] += point[0]
-    ranges[1] += point[1]
-
-    # clean the ranges minimum to 0, negatives act weird
-    ranges[ranges < 0] = 0
+def bias_image_area_around_point(img_arr, point, radius=5, gaus_sigma=5, mute_factor=1):
+    # find the area around the point for the gaussian filter to use
+    ranges = find_square_around_point(point, radius=radius)
 
     # get the subarray (numpy indexing auto-respects ranges higher than widths/heights)
     blurred_array = gaussian_filter(
@@ -33,12 +24,15 @@ def bias_image_area_around_point(img_arr, point, width=5, gaus_sigma=5, mute_fac
     img_arr[ranges[0][0]:ranges[0][1], ranges[1][0]:ranges[1][1]] = (blurred_array * mute_factor).astype(np.uint8)
 
 
-def get_entropy_points(entropy_img_arr, num_points=10000, blur_radius=15, gaus_sigma=5, mute_factor=1):
-    points = []
+def get_entropy_points(img_arr, num_points=10000, blur_radius=15, gaus_sigma=5, mute_factor=1, show_blur_img=False):
+    entropy_img_arr = np.copy(img_arr)
+    points = set()
 
-    start = time.time()
     print("hello")
-    for _ in range(num_points):
+    start = time.time()
+    i = 0
+    while len(points) != num_points:
+        i += 1
         max_val = np.amax(entropy_img_arr)
         max_points = np.nonzero(entropy_img_arr >= max_val)
 
@@ -46,30 +40,30 @@ def get_entropy_points(entropy_img_arr, num_points=10000, blur_radius=15, gaus_s
         # going to require getting a snippet of the image?
         point_choice = randrange(len(max_points[0]))
         point = max_points[0][point_choice], max_points[1][point_choice]
-        points.append(point)
         bias_image_area_around_point(
-            entropy_img_arr, point, width=blur_radius,
+            entropy_img_arr, point, radius=blur_radius,
             gaus_sigma=gaus_sigma, mute_factor=mute_factor
         )
+        # lets us make sure that the points are unique... may involve significant runtime?
+        point_str = ".".join(str(el) for el in point)
+        points.add(point_str)
+
+        # making sure we don't get significant runtime
+        if i > num_points * 4:
+            raise ValueError("We're running rampant! Exiting at {} iterations, only {}/{} points".format(
+                i, len(points), num_points))
 
     end = time.time()
     total = end - start
-    print("Took {} seconds for {} points\n  - average {} seconds".format(
-        total, num_points, total / num_points
+    print("Took {} seconds & {} loops for {} points\n  - average {} seconds".format(
+        total, i, num_points, total / num_points
     ))
 
-    return np.array(points)
+    if show_blur_img:
+        entropy_img = Image.fromarray(np.fliplr(np.rot90(entropy_img_arr, axes=(-1, 0))))
+        entropy_img.show()
 
-def draw_points_as_delany_triangles(img_arr, img_points):
-    tri = Delaunay(img_points)
-    img = Image.fromarray(img_arr)
-    draw = ImageDraw.Draw(img)
-
-    for tri_indexes in tri.simplices:
-        points = [tuple(tri.points[x]) for x in tri_indexes]
-        draw.polygon(points, outline="#ffffff")
-    
-    return img
+    return np.array([[int(el) for el in point.split('.')] for point in points])
 
 if __name__ == "__main__":
     n = len(sys.argv)
