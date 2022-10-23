@@ -30,7 +30,7 @@ if __name__ == "__main__":
     if n < 2:
         raise ValueError("Please pass in the filename for the script to use")
     
-    env = os.environ.get('ENV', 'DEV')
+    env = os.environ.get('ENV', 'DEV-PHOTO')
 
     filepath = sys.argv[1]
     blur_radius = int(sys.argv[2]) if n > 2 else 5

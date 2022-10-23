@@ -1,6 +1,6 @@
 import sys
 import time
-from random import randrange
+import random
 from typing import DefaultDict
 
 import numpy as np
@@ -21,8 +21,39 @@ def bias_image_area_around_point(img_arr, point, radius=5, gaus_sigma=5, mute_fa
     blurred_array = gaussian_filter(
         img_arr[ranges[0][0]:ranges[0][1], ranges[1][0]:ranges[1][1]], sigma=gaus_sigma)
 
-    img_arr[ranges[0][0]:ranges[0][1], ranges[1][0]:ranges[1][1]] = (blurred_array * mute_factor).astype(np.uint8)
+    muted_array_blur = (blurred_array * mute_factor).astype(np.uint8)
+    img_arr[ranges[0][0]:ranges[0][1], ranges[1][0]:ranges[1][1]] = muted_array_blur
 
+
+def choose_norm_point(img_arr, max_val):
+    max_points = np.nonzero(img_arr >= max_val)
+    point_choice = random.randrange(len(max_points[0]))
+    return np.transpose(max_points)[point_choice]
+
+
+def choose_biased_point(img_arr, max_val, zero_candidate_cutoff=0):
+    size = img_arr.shape
+    max_points = np.nonzero(img_arr >= max_val)
+    sorted_indx = np.lexsort((max_points[1], max_points[0]))
+    zip_points = np.transpose(max_points)[sorted_indx]
+
+    num_points = zip_points.shape[0]
+
+    p = None
+    if zero_candidate_cutoff:
+        cutoff_indxs = np.where(zip_points[:, 0] <= zero_candidate_cutoff)[0]
+        zeros = np.zeros(shape=cutoff_indxs.shape, dtype=np.int64)
+
+        candidate_len = num_points - zeros.shape[0]
+        rem_points = np.array([(1 / candidate_len) ** i for i in range(candidate_len)], dtype=np.float64)
+        if not len(rem_points):
+            return None
+        norm_rem_points = (rem_points / rem_points.sum()) / rem_points.max()
+
+        p = np.append(zeros, norm_rem_points)
+
+    indx = np.random.choice(num_points, p=p)
+    return zip_points[indx]
 
 def get_entropy_points(img_arr, num_points=10000, blur_radius=15, gaus_sigma=5, mute_factor=1, show_blur_img=False):
     entropy_img_arr = np.copy(img_arr)
@@ -34,36 +65,37 @@ def get_entropy_points(img_arr, num_points=10000, blur_radius=15, gaus_sigma=5, 
     while len(points) != num_points:
         i += 1
         max_val = np.amax(entropy_img_arr)
-        max_points = np.nonzero(entropy_img_arr >= max_val)
 
         # pick a random point, and then do a gaussian blur around some radius of that point
         # going to require getting a snippet of the image?
-        point_choice = randrange(len(max_points[0]))
-        point = max_points[0][point_choice], max_points[1][point_choice]
+        point = choose_biased_point(entropy_img_arr, max_val, zero_candidate_cutoff=300)
+        if point is None:
+            print("Only found {} eligible candidates".format(i+1))
+            break
+
         bias_image_area_around_point(
             entropy_img_arr, point, radius=blur_radius,
             gaus_sigma=gaus_sigma, mute_factor=mute_factor
         )
-        # lets us make sure that the points are unique... may involve significant runtime?
-        point_str = ".".join(str(el) for el in point)
-        points.add(point_str)
+        # lets us make sure that the points are unique via sets
+        points.add(tuple(point))
 
         # making sure we don't get significant runtime
         if i > num_points * 4:
-            raise ValueError("We're running rampant! Exiting at {} iterations, only {}/{} points".format(
-                i, len(points), num_points))
+            raise ValueError("We're running rampant! Exiting at {} iterations of {} points".format(
+                i, num_points))
 
     end = time.time()
     total = end - start
     print("Took {} seconds & {} loops for {} points\n  - average {} seconds".format(
-        total, i, num_points, total / num_points
+        total, i, len(points), total / len(points)
     ))
 
     if show_blur_img:
         entropy_img = Image.fromarray(np.fliplr(np.rot90(entropy_img_arr, axes=(-1, 0))))
         entropy_img.show()
 
-    return np.array([[int(el) for el in point.split('.')] for point in points])
+    return np.array(list(points), dtype=np.int64)
 
 if __name__ == "__main__":
     n = len(sys.argv)
