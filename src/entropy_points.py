@@ -31,7 +31,7 @@ def choose_norm_point(img_arr, max_val):
     return np.transpose(max_points)[point_choice]
 
 
-def choose_biased_point(img_arr, max_val, zero_candidate_cutoff=0):
+def choose_biased_point(img_arr, max_val, point_candidate_start=0):
     size = img_arr.shape
     max_points = np.nonzero(img_arr >= max_val)
     sorted_indx = np.lexsort((max_points[1], max_points[0]))
@@ -40,8 +40,8 @@ def choose_biased_point(img_arr, max_val, zero_candidate_cutoff=0):
     num_points = zip_points.shape[0]
 
     p = None
-    if zero_candidate_cutoff:
-        cutoff_indxs = np.where(zip_points[:, 0] <= zero_candidate_cutoff)[0]
+    if point_candidate_start:
+        cutoff_indxs = np.where(zip_points[:, 0] <= point_candidate_start)[0]
         zeros = np.zeros(shape=cutoff_indxs.shape, dtype=np.int64)
 
         candidate_len = num_points - zeros.shape[0]
@@ -55,7 +55,7 @@ def choose_biased_point(img_arr, max_val, zero_candidate_cutoff=0):
     indx = np.random.choice(num_points, p=p)
     return zip_points[indx]
 
-def get_entropy_points(img_arr, num_points=10000, blur_radius=15, gaus_sigma=5, mute_factor=1, show_blur_img=False):
+def get_entropy_points(img_arr, num_points=10000, blur_radius=15, gaus_sigma=5, mute_factor=1, show_blur_img=False, point_candidate_start=300):
     entropy_img_arr = np.copy(img_arr)
     points = set()
 
@@ -68,7 +68,7 @@ def get_entropy_points(img_arr, num_points=10000, blur_radius=15, gaus_sigma=5, 
 
         # pick a random point, and then do a gaussian blur around some radius of that point
         # going to require getting a snippet of the image?
-        point = choose_biased_point(entropy_img_arr, max_val, zero_candidate_cutoff=300)
+        point = choose_biased_point(entropy_img_arr, max_val, point_candidate_start=point_candidate_start)
         if point is None:
             print("Only found {} eligible candidates".format(i+1))
             break

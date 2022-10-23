@@ -36,6 +36,7 @@ if __name__ == "__main__":
     blur_radius = int(sys.argv[2]) if n > 2 else 5
     num_points = int(sys.argv[3]) if n > 3 else 1000
     mute_factor = float(sys.argv[4]) if n > 4 else 1
+    point_candidate_start = int(sys.argv[5]) if n > 5 else 300
 
     # grabbing & loading the image
     bw_img_arr = get_image_arr(filepath, greyscale=True)
@@ -46,7 +47,8 @@ if __name__ == "__main__":
     img_points = get_entropy_points(
         np.fliplr(np.rot90(entropy_img_arr, axes=(-1, 0))),
         blur_radius=blur_radius, num_points=num_points,
-        mute_factor=mute_factor, show_blur_img=False,
+        mute_factor=mute_factor, show_blur_img=True,
+        point_candidate_start=point_candidate_start
     )
 
     triangle_img_arr = np.zeros(shape=bw_img_arr.shape)
