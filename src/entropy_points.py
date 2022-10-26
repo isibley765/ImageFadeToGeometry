@@ -1,3 +1,5 @@
+from collections import defaultdict
+import os
 import sys
 import time
 import random
@@ -41,24 +43,60 @@ def choose_point_past_cutoff(img_arr, point_candidate_start=0):
     return np.transpose(max_points)[point_choice] + [point_candidate_start, 0]
 
 
-def choose_biased_points(points, num_selections):
+def get_points_range(indx, sorted_points, range=3):
+    """Assumes sorted_points is sorted already"""
+    min_val = sorted_points[0]
+    delta = range // 2
+    left_val = max(min_val, sorted_points[indx] - delta)
+    right_val = left_val + range
+    return left_val, right_val
+
+
+def get_vertical_slice_from_indx(indx, sorted_points, range=3):
+    """Assumes sorted_points is sorted already"""
+    left_val, right_val = get_points_range(indx, sorted_points, range=range)
+    return sorted_points[(sorted_points >= left_val) * (sorted_points <= right_val)]
+
+
+def choose_biased_points(points, num_selections, step=4):
+    """
+    The points selection is biased both by a simple fractional equation, and adjusted roughly for points density
+    in the vertical slice related to the respective point
+    """
     points = np.array(points, dtype=np.int64)
     num_points = points.shape[0]
+    # sort points, and get the sorted x values
+    x_vals = points[:, 0]
+    sorting_indxs = np.argsort(x_vals)
+    x_vals = x_vals[sorting_indxs]
+    sorted_points = points[sorting_indxs]
     # TODO: need a cleaner way to bias more heavily to the left
-    rem_points_prob = np.array([(1 / num_points * i) for i in range(num_points)], dtype=np.float64)
+    # allow for biasing via point density for a vertical slice
+    rem_points_prob = np.array([len(get_vertical_slice_from_indx(i, x_vals)) / ((i * step)+1) for i in range(0, num_points)], dtype=np.float64)
     norm_rem_points_prob = rem_points_prob / rem_points_prob.sum()
 
     indx = np.random.choice(num_points, replace=False, size=num_selections, p=norm_rem_points_prob)
-    return points[indx]
+    chosen_points = sorted_points[indx]  # choose from sorted points, since rem_points_prob is sorted in its own way
+    
+    env = os.environ.get('ENV', 'DEV-PHOTO')
+    if env == 'DEV-PHOTO':
+        buckets = defaultdict(int)
+        for point in chosen_points:
+            x = (point[0] // 100) * 100
+            buckets[x] += 1
+        from pprint import pprint as pp
+        pp(buckets)
+
+    return chosen_points
 
 def get_entropy_points(img_arr, num_points=10000, blur_radius=15, gaus_sigma=5, mute_factor=1, show_blur_img=False, point_candidate_start=300):
     entropy_img_arr = np.copy(img_arr)
-    point_candidates = set()
+    points = set()
 
     print("hello")
     start = time.time()
     i = 0
-    while len(point_candidates) != num_points * 3:
+    while len(points) != num_points:
         i += 1
 
         # pick a random point, and then do a gaussian blur around some radius of that point
@@ -73,19 +111,17 @@ def get_entropy_points(img_arr, num_points=10000, blur_radius=15, gaus_sigma=5, 
             gaus_sigma=gaus_sigma, mute_factor=mute_factor
         )
         # lets us make sure that the points are unique via sets
-        point_candidates.add(tuple(point))
+        points.add(tuple(point))
 
         # making sure we don't get significant runtime
         if i > num_points * 6:
             raise ValueError("We're running rampant! Exiting at {} iterations of {} points, {} found".format(
-                i, num_points, len(point_candidates)))
-
-    points = choose_biased_points(list(point_candidates), num_selections=num_points)
+                i, num_points, len(points)))
 
     end = time.time()
     total = end - start
-    print("Took {} seconds & {} loops for {} points | {} picked\n  - average {} seconds".format(
-        total, i, len(point_candidates), len(points), total / len(points)
+    print("Took {} seconds & {} loops for {} points\n  - average {} seconds".format(
+        total, i, len(points), total / len(points)
     ))
 
     if show_blur_img:
